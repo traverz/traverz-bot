@@ -109,7 +109,6 @@
 
 </details>
 
-
 ## 💡 Key Features of nanobot
 
 - **Ultra-lightweight**: stable long-running agent behavior with a small, readable core.
@@ -120,8 +119,8 @@
 ## 📦 Install
 
 > [!IMPORTANT]
-> If you want the newest features and experiments, install from source. 
-> 
+> If you want the newest features and experiments, install from source.
+>
 > If you want the most stable day-to-day experience, install from PyPI or with `uv`.
 
 **Install from source**
@@ -156,7 +155,7 @@ nanobot onboard
 
 Configure these **two parts** in your config (other options have defaults). Add or merge the following blocks into your existing config instead of replacing the whole file.
 
-*Set your API key* (e.g. [OpenRouter](https://openrouter.ai/keys), recommended for global users):
+_Set your API key_ (e.g. [OpenRouter](https://openrouter.ai/keys), recommended for global users):
 
 ```json
 {
@@ -168,7 +167,7 @@ Configure these **two parts** in your config (other options have defaults). Add 
 }
 ```
 
-*Set your model* (optionally pin a provider — defaults to auto-detection):
+_Set your model_ (optionally pin a provider — defaults to auto-detection):
 
 ```json
 {
@@ -186,7 +185,6 @@ Configure these **two parts** in your config (other options have defaults). Add 
 ```bash
 nanobot agent
 ```
-
 
 - Want different LLM providers, web search, MCP, security settings, or more config options? See [Configuration](./docs/configuration.md)
 - Want to run nanobot in chat apps like Telegram, Discord, WeChat or Feishu? See [Chat Apps](./docs/chat-apps.md)
@@ -267,9 +265,9 @@ PRs welcome! The codebase is intentionally small and readable. 🤗
 
 ### Branching Strategy
 
-| Branch | Purpose |
-|--------|---------|
-| `main` | Stable releases — bug fixes and minor improvements |
+| Branch    | Purpose                                                   |
+| --------- | --------------------------------------------------------- |
+| `main`    | Stable releases — bug fixes and minor improvements        |
 | `nightly` | Experimental features — new features and breaking changes |
 
 **Unsure which branch to target?** See [CONTRIBUTING.md](./CONTRIBUTING.md) for details.
@@ -287,7 +285,6 @@ PRs welcome! The codebase is intentionally small and readable. 🤗
 <a href="https://github.com/HKUDS/nanobot/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=HKUDS/nanobot&max=100&columns=12&updated=20260210" alt="Contributors" />
 </a>
-
 
 ## ⭐ Star History
 
