@@ -390,11 +390,10 @@ class WebSocketChannel(BaseChannel):
         self._static_dist_path: Path | None = (
             static_dist_path.resolve() if static_dist_path is not None else None
         )
-        # Process-local secret used to HMAC-sign media URLs. The signed URL is
-        # the capability — anyone who holds a valid URL can fetch that one
-        # file, nothing else. The secret regenerates on restart so links
-        # become self-expiring (callers just refresh the session list).
+        # Process-local secret used to HMAC-sign media URLs.
         self._media_secret: bytes = secrets.token_bytes(32)
+        # connection -> Traverz trip context {trip_id, user_jwt, user_role, user_id}
+        self._conn_trip_ctx: dict[Any, dict] = {}
 
     # -- Subscription bookkeeping -------------------------------------------
 
@@ -414,6 +413,7 @@ class WebSocketChannel(BaseChannel):
             if not subs:
                 self._subs.pop(cid, None)
         self._conn_default.pop(connection, None)
+        self._conn_trip_ctx.pop(connection, None)
 
     async def _send_event(self, connection: Any, event: str, **fields: Any) -> None:
         """Send a control event (attached, error, ...) to a single connection."""
@@ -433,6 +433,20 @@ class WebSocketChannel(BaseChannel):
 
     def _expected_path(self) -> str:
         return _normalize_config_path(self.config.path)
+
+    def _trip_session_key(self, connection: Any) -> str | None:
+        """Return the trip-scoped session key for this connection, or None."""
+        ctx = self._conn_trip_ctx.get(connection)
+        if ctx and ctx.get("trip_id"):
+            return f"trip:{ctx['trip_id']}"
+        return None
+
+    def _build_trip_metadata(self, connection: Any, base: dict) -> dict:
+        """Merge Traverz trip context into the message metadata."""
+        ctx = self._conn_trip_ctx.get(connection)
+        if not ctx:
+            return base
+        return {**base, **ctx}
 
     def _build_ssl_context(self) -> ssl.SSLContext | None:
         cert = self.config.ssl_certfile.strip()
@@ -892,19 +906,33 @@ class WebSocketChannel(BaseChannel):
             logger.warning("websocket: client_id too long ({} chars), truncating", len(client_id))
             client_id = client_id[:128]
 
+        # --- Traverz trip context ------------------------------------------------
+        raw_trip_id = _query_first(query, "trip_id") or ""
+        raw_user_id = _query_first(query, "user_id") or ""
+        raw_user_jwt = _query_first(query, "user_jwt") or ""
+        raw_user_role = _query_first(query, "user_role") or "viewer"
+        # Sanitize trip_id: alphanumeric + hyphens/underscores only, max 64 chars
+        if raw_trip_id and re.match(r'^[A-Za-z0-9_-]{1,64}$', raw_trip_id):
+            self._conn_trip_ctx[connection] = {
+                "trip_id": raw_trip_id,
+                "user_id": raw_user_id[:128] if raw_user_id else None,
+                "user_jwt": raw_user_jwt[:2048] if raw_user_jwt else None,
+                "user_role": raw_user_role if raw_user_role in ("owner", "editor", "viewer") else "viewer",
+            }
+        # -------------------------------------------------------------------------
+
         default_chat_id = str(uuid.uuid4())
 
         try:
-            await connection.send(
-                json.dumps(
-                    {
-                        "event": "ready",
-                        "chat_id": default_chat_id,
-                        "client_id": client_id,
-                    },
-                    ensure_ascii=False,
-                )
-            )
+            trip_session_key = self._trip_session_key(connection)
+            ready_payload: dict[str, Any] = {
+                "event": "ready",
+                "chat_id": default_chat_id,
+                "client_id": client_id,
+            }
+            if trip_session_key:
+                ready_payload["session_key"] = trip_session_key
+            await connection.send(json.dumps(ready_payload, ensure_ascii=False))
             # Register only after ready is successfully sent to avoid out-of-order sends
             self._conn_default[connection] = default_chat_id
             self._attach(connection, default_chat_id)
@@ -929,7 +957,10 @@ class WebSocketChannel(BaseChannel):
                     sender_id=client_id,
                     chat_id=default_chat_id,
                     content=content,
-                    metadata={"remote": getattr(connection, "remote_address", None)},
+                    metadata=self._build_trip_metadata(
+                        connection, {"remote": getattr(connection, "remote_address", None)}
+                    ),
+                    session_key=self._trip_session_key(connection),
                 )
         except Exception as e:
             logger.debug("websocket connection ended: {}", e)
@@ -1051,7 +1082,10 @@ class WebSocketChannel(BaseChannel):
                 chat_id=cid,
                 content=content,
                 media=media_paths or None,
-                metadata={"remote": getattr(connection, "remote_address", None)},
+                metadata=self._build_trip_metadata(
+                    connection, {"remote": getattr(connection, "remote_address", None)}
+                ),
+                session_key=self._trip_session_key(connection),
             )
             return
         await self._send_event(connection, "error", detail=f"unknown type: {t!r}")

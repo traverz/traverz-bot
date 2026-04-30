@@ -77,6 +77,8 @@ class WhatsAppChannel(BaseChannel):
         self._processed_message_ids: OrderedDict[str, None] = OrderedDict()
         self._lid_to_phone: dict[str, str] = {}
         self._bridge_token: str | None = None
+        # Per-phone trip session: phone_id → {user_jwt, user_id, user_role, trip_id}
+        self._wa_sessions: dict[str, dict] = {}
 
     def _effective_bridge_token(self) -> str:
         """Resolve the bridge token, generating a local secret when needed."""
@@ -276,16 +278,74 @@ class WhatsAppChannel(BaseChannel):
                     media_tag = f"[{media_type}: {p}]"
                     content = f"{content}\n{media_tag}" if content else media_tag
 
+            # ---- Traverz: per-phone session & trip selection ----
+            wa_session = self._wa_sessions.setdefault(sender_id, {})
+
+            # Command: /auth <jwt>  — link this phone to a Traverz account
+            stripped = content.strip()
+            if stripped.lower().startswith(("/auth ", "!auth ")):
+                token_val = stripped.split(" ", 1)[1].strip()
+                wa_session["user_jwt"] = token_val
+                await self.send(OutboundMessage(
+                    channel=self.name, chat_id=sender,
+                    content="✅ Authenticated! Send /trips to list your trips or /trip <id> to connect.",
+                ))
+                return
+
+            # Command: /trip <id>  — select a trip for this phone session
+            if stripped.lower().startswith(("/trip ", "!trip ")):
+                tid_val = stripped.split(" ", 1)[1].strip()
+                wa_session["trip_id"] = tid_val
+                await self.send(OutboundMessage(
+                    channel=self.name, chat_id=sender,
+                    content=f"✅ Connected to trip *{tid_val}*. How can I help with your trip?",
+                ))
+                return
+
+            # Command: /reset  — clear this phone's session
+            if stripped.lower() in ("/reset", "!reset"):
+                self._wa_sessions.pop(sender_id, None)
+                await self.send(OutboundMessage(
+                    channel=self.name, chat_id=sender,
+                    content="Session cleared. Send /auth <token> to start again.",
+                ))
+                return
+
+            # Not authenticated yet → prompt user
+            if not wa_session.get("user_jwt"):
+                await self.send(OutboundMessage(
+                    channel=self.name, chat_id=sender,
+                    content=(
+                        "👋 Hi! I'm *Traverz*, your travel AI.\n\n"
+                        "To get started, open the Traverz app → Settings → Bot Access "
+                        "and copy your access token, then send:\n"
+                        "`/auth <your_token>`"
+                    ),
+                ))
+                return
+
+            # Build trip-aware metadata and session key
+            trip_id_val = wa_session.get("trip_id")
+            trip_meta: dict = {
+                "message_id": message_id,
+                "timestamp": data.get("timestamp"),
+                "is_group": data.get("isGroup", False),
+                "user_jwt": wa_session.get("user_jwt"),
+                "trip_id": trip_id_val,
+                "user_role": wa_session.get("user_role", "viewer"),
+                "user_id": wa_session.get("user_id"),
+            }
+            # If no trip selected yet, keep session per-phone so the agent asks which trip
+            trip_session_key = f"trip:{trip_id_val}" if trip_id_val else None
+            # ---- end Traverz ----
+
             await self._handle_message(
                 sender_id=sender_id,
                 chat_id=sender,  # Use full LID for replies
                 content=content,
                 media=media_paths,
-                metadata={
-                    "message_id": message_id,
-                    "timestamp": data.get("timestamp"),
-                    "is_group": data.get("isGroup", False),
-                },
+                metadata=trip_meta,
+                session_key=trip_session_key,
             )
 
         elif msg_type == "status":

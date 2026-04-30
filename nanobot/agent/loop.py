@@ -319,6 +319,10 @@ class AgentLoop:
             self.tools.register(
                 CronTool(self.cron_service, default_timezone=self.context.timezone or "UTC")
             )
+        # Traverz backend tools (always registered; require trip context at runtime)
+        from nanobot.agent.tools.traverz import ALL_TRAVERZ_TOOLS
+        for tool_cls in ALL_TRAVERZ_TOOLS:
+            self.tools.register(tool_cls())
 
     async def _connect_mcp(self) -> None:
         """Connect to configured MCP servers (one-time, lazy)."""
@@ -616,6 +620,13 @@ class AgentLoop:
 
     async def _dispatch(self, msg: InboundMessage) -> None:
         """Process a message: per-session serial, cross-session concurrent."""
+        # Inject Traverz trip context vars so tools can read them for this turn.
+        from nanobot.traverz import context as _tctx
+        _tctx.trip_id.set(msg.metadata.get("trip_id") if msg.metadata else None)
+        _tctx.user_jwt.set(msg.metadata.get("user_jwt") if msg.metadata else None)
+        _tctx.user_role.set((msg.metadata.get("user_role") or "viewer") if msg.metadata else "viewer")
+        _tctx.user_id.set(msg.metadata.get("user_id") if msg.metadata else None)
+
         session_key = self._effective_session_key(msg)
         if session_key != msg.session_key:
             msg = dataclasses.replace(msg, session_key_override=session_key)
