@@ -324,6 +324,14 @@ class AgentLoop:
         for tool_cls in ALL_TRAVERZ_TOOLS:
             self.tools.register(tool_cls())
 
+        # Kick off skills-manifest preload (non-blocking).  The manifest is
+        # also lazily loaded on first use of discover_skills / traverz_api.
+        try:
+            from nanobot.traverz import skills_manifest as _skills_manifest
+            asyncio.create_task(_skills_manifest.refresh(force=True))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"Failed to schedule Traverz skills manifest preload: {exc}")
+
     async def _connect_mcp(self) -> None:
         """Connect to configured MCP servers (one-time, lazy)."""
         if self._mcp_connected or self._mcp_connecting or not self._mcp_servers:

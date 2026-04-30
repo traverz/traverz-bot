@@ -870,6 +870,185 @@ class ListUserTripsTool(Tool):
 
 
 # ---------------------------------------------------------------------------
+# Dynamic skill dispatcher  — driven by backend-hosted skills manifest
+# ---------------------------------------------------------------------------
+
+from nanobot.traverz import skills_manifest as _skills_manifest
+
+
+def _expand_path_template(template: str, variables: dict[str, Any]) -> str:
+    """Replace {placeholders} in a path template with values from `variables`.
+
+    The trip_id placeholder is auto-filled from context if not provided.
+    """
+    out = template
+    if "{trip_id}" in out:
+        tid = variables.get("trip_id") or _ctx.trip_id.get()
+        if not tid:
+            raise ValueError("This skill requires a trip_id, but no trip context is set.")
+        out = out.replace("{trip_id}", str(tid))
+    for k, v in (variables or {}).items():
+        ph = "{" + str(k) + "}"
+        if ph in out and v is not None:
+            out = out.replace(ph, str(v))
+    if "{" in out:
+        raise ValueError(f"Path template still has unfilled placeholders: {out}")
+    return out
+
+
+@tool_parameters({
+    "type": "object",
+    "properties": {
+        "domain": {
+            "type": "string",
+            "description": "Optional filter, e.g. 'pal', 'budgeting', 'documents', 'cities'.",
+        },
+    },
+    "required": [],
+})
+class DiscoverSkillsTool(Tool):
+    """List the skills exposed by the backend manifest.
+
+    Use this if you need to discover capabilities beyond the typed tools —
+    e.g. PAL events, document operations, settlements, or anything new
+    that the backend has just added.  After listing, invoke a skill by id
+    using `traverz_api`.
+    """
+
+    @property
+    def name(self) -> str:
+        return "discover_skills"
+
+    @property
+    def description(self) -> str:
+        return (
+            "List the Traverz backend skills available to you.  "
+            "Returns id, mode (generic|trip|both), description and write-flag for each.  "
+            "After picking one, invoke it via traverz_api(skill_id=..., variables=..., body=...)."
+        )
+
+    @property
+    def read_only(self) -> bool:
+        return True
+
+    async def execute(self, **kwargs: Any) -> str:
+        await _skills_manifest.ensure_loaded()
+        manifest = _skills_manifest.get()
+        domain = (kwargs.get("domain") or "").strip().lower()
+        skills = list(manifest.skills_by_id.values())
+        if domain:
+            skills = [s for s in skills if domain in s.get("path", "").lower() or domain in s.get("id", "").lower()]
+        compact = [
+            {
+                "id": s["id"],
+                "name": s.get("name"),
+                "mode": s.get("mode"),
+                "method": s.get("method"),
+                "path": s.get("path"),
+                "write": s.get("write", False),
+                "description": s.get("description"),
+            }
+            for s in skills
+        ]
+        return _fmt({"version": manifest.version, "count": len(compact), "skills": compact})
+
+
+@tool_parameters({
+    "type": "object",
+    "properties": {
+        "skill_id": {
+            "type": "string",
+            "description": "The skill id from discover_skills (e.g. 'list_pal_events', 'add_expense').",
+        },
+        "variables": {
+            "type": "object",
+            "description": "Path/query variables to substitute into the URL template (e.g. {trip_id, event_id, pal_event_id}).",
+        },
+        "body": {
+            "type": "object",
+            "description": "JSON body for POST/PATCH skills.  Omit for GET/DELETE.",
+        },
+    },
+    "required": ["skill_id"],
+})
+class TraverzApiTool(Tool):
+    """Generic dispatcher to invoke any backend skill from the manifest.
+
+    This lets the bot use newly added backend endpoints without code
+    changes — adding a skill to the manifest is enough.
+    Safety: write skills require owner/editor role; trip skills require
+    a trip context; the skill must exist in the manifest.
+    """
+
+    @property
+    def name(self) -> str:
+        return "traverz_api"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Invoke a Traverz backend skill by id (use discover_skills first to find ids).  "
+            "Pass `variables` to fill path placeholders and `body` for POST/PATCH payloads.  "
+            "Use this for capabilities not covered by the typed tools (PAL events, settlements, "
+            "documents, ideas, city search, etc.)."
+        )
+
+    async def execute(self, **kwargs: Any) -> str:
+        skill_id = kwargs.get("skill_id")
+        if not skill_id:
+            return "skill_id is required."
+
+        await _skills_manifest.ensure_loaded()
+        skill = _skills_manifest.get().get(skill_id)
+        if not skill:
+            return f"Unknown skill_id '{skill_id}'.  Call discover_skills to list available skills."
+
+        mode = skill.get("mode", "trip")
+        if mode == "trip" and not _ctx.trip_id.get():
+            return f"Skill '{skill_id}' requires a trip context, but the session is generic."
+
+        if skill.get("write"):
+            allowed_roles = skill.get("roles") or ["owner", "editor"]
+            role = _ctx.user_role.get() or "viewer"
+            if role not in allowed_roles:
+                return (
+                    f"You have '{role}' access; the '{skill_id}' skill requires one of "
+                    f"{allowed_roles}."
+                )
+
+        try:
+            path = _expand_path_template(skill["path"], kwargs.get("variables") or {})
+        except ValueError as e:
+            return str(e)
+
+        method = (skill.get("method") or "GET").upper()
+        body = kwargs.get("body") or {}
+
+        try:
+            if method == "GET":
+                # Use any non-path variables as query parameters
+                query = {k: v for k, v in (kwargs.get("variables") or {}).items()
+                         if "{" + k + "}" not in skill["path"]}
+                data = await _get(path, params=query or None)
+            elif method == "POST":
+                data = await _post(path, body)
+            elif method == "PATCH":
+                data = await _patch(path, body)
+            elif method == "DELETE":
+                return await _delete(path)
+            else:
+                return f"Unsupported HTTP method '{method}' on skill '{skill_id}'."
+        except httpx.HTTPStatusError as e:
+            try:
+                err_body = e.response.json()
+            except Exception:
+                err_body = e.response.text
+            return f"Backend returned {e.response.status_code} for {skill_id}: {err_body}"
+
+        return _fmt(data)
+
+
+# ---------------------------------------------------------------------------
 # Expose all tools
 # ---------------------------------------------------------------------------
 
@@ -890,4 +1069,6 @@ ALL_TRAVERZ_TOOLS: list[type[Tool]] = [
     SearchFlightsTool,
     SearchHotelsTool,
     ListUserTripsTool,
+    DiscoverSkillsTool,
+    TraverzApiTool,
 ]

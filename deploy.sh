@@ -36,8 +36,8 @@ gcloud run deploy traverz-bot \
     --port 8765 \
     --vpc-connector traverz-connector \
     --vpc-egress private-ranges-only \
-    --set-env-vars "TRAVERZ_BACKEND_URL=https://api.traverz.ai,TRAVERZ_GCS_BUCKET=traverz-bot-workspace" \
-    --set-secrets "GEMINI_API_KEY=GEMINI_API_KEY:latest,TRAVERZ_WS_TOKEN=TRAVERZ_WS_TOKEN:latest" \
+    --set-env-vars "TRAVERZ_BACKEND_URL=https://api.traverz.ai,TRAVERZ_WORKSPACE_PATH=/home/traverz/.traverz/workspace" \
+    --set-secrets "GEMINI_API_KEY=GEMINI_API_KEY:latest,WEBSOCKET_TOKEN_SECRET=WEBSOCKET_TOKEN_SECRET:latest" \
     --project "$PROJECT_ID"
 
 echo "==> Done."

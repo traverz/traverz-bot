@@ -45,10 +45,7 @@
       "streaming": true
     },
     "whatsapp": {
-      "enabled": "${WHATSAPP_ENABLED}",
-      "bridgeUrl": "ws://localhost:3001",
-      "bridgeToken": "${WHATSAPP_BRIDGE_TOKEN}",
-      "groupPolicy": "open"
+      "enabled": false
     },
     "telegram": {
       "enabled": false

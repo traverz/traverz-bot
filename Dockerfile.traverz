@@ -49,6 +49,7 @@ RUN groupadd --system fuse 2>/dev/null || true && \
     chown -R traverz:traverz /home/traverz /app && \
     usermod -aG fuse traverz
 
+COPY traverz_config.json /app/traverz_config.json
 COPY traverz_entrypoint.sh /usr/local/bin/traverz_entrypoint.sh
 RUN sed -i 's/\r$//' /usr/local/bin/traverz_entrypoint.sh && \
     chmod +x /usr/local/bin/traverz_entrypoint.sh
@@ -60,4 +61,4 @@ ENV HOME=/home/traverz
 EXPOSE 8765
 
 ENTRYPOINT ["traverz_entrypoint.sh"]
-CMD ["serve"]
+CMD ["gateway"]
