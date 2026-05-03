@@ -35,7 +35,16 @@ class _SuppressTcpProbeErrors(logging.Filter):
     _PROBE_MSG = "did not receive a valid HTTP request"
 
     def filter(self, record: logging.LogRecord) -> bool:
-        return self._PROBE_MSG not in record.getMessage()
+        if self._PROBE_MSG in record.getMessage():
+            return False
+        # websockets logs InvalidMessage via exc_info=True, so the probe string
+        # lands in the exception object rather than the log message itself.
+        exc_info = record.exc_info
+        if exc_info:
+            exc = exc_info[1]
+            if exc is not None and self._PROBE_MSG in str(exc):
+                return False
+        return True
 
 
 logging.getLogger("websockets.server").addFilter(_SuppressTcpProbeErrors())
