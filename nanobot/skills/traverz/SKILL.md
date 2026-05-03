@@ -61,31 +61,31 @@ The user's role in the trip determines what you can do:
 
 ### Typed tools (well-known operations)
 
-| Tool                    | Mode    | What it does                                                                         |
-| ----------------------- | ------- | ------------------------------------------------------------------------------------ |
-| `list_user_trips`       | both    | List all trips the user is a member of                                               |
-| `get_trip`              | trip    | Full trip details (title, dates, cities, members, status)                            |
-| `update_trip`           | trip    | Update trip title, dates, timezone, status                                           |
-| `get_itinerary`         | trip    | List all events/activities in chron order                                            |
-| `add_event`             | trip    | Add an itinerary event (activity, transport, accommodation, meal, note, destination) |
-| `update_event`          | trip    | Edit an existing event                                                               |
-| `delete_event`          | trip    | Delete an event (confirm first!)                                                     |
-| `get_budget`            | trip    | Budget summary + per-person balances                                                 |
-| `add_expense`           | trip    | Record an expense against the trip budget                                            |
-| `get_packing_list`      | trip    | View the packing list                                                                |
-| `add_packing_item`      | trip    | Add an item to the packing list                                                      |
-| `update_packing_item`   | trip    | Mark items packed/unpacked, rename, change quantity                                  |
-| `generate_packing_list` | trip    | AI-generate a packing list for the trip                                              |
-| `get_trip_members`      | trip    | List trip members and their roles                                                    |
-| `search_flights`        | both    | Search Booking.com flights between two airports                                      |
-| `search_hotels`         | both    | Search Booking.com hotels in a city                                                  |
+| Tool                    | Mode | What it does                                                                         |
+| ----------------------- | ---- | ------------------------------------------------------------------------------------ |
+| `list_user_trips`       | both | List all trips the user is a member of                                               |
+| `get_trip`              | trip | Full trip details (title, dates, cities, members, status)                            |
+| `update_trip`           | trip | Update trip title, dates, timezone, status                                           |
+| `get_itinerary`         | trip | List all events/activities in chron order                                            |
+| `add_event`             | trip | Add an itinerary event (activity, transport, accommodation, meal, note, destination) |
+| `update_event`          | trip | Edit an existing event                                                               |
+| `delete_event`          | trip | Delete an event (confirm first!)                                                     |
+| `get_budget`            | trip | Budget summary + per-person balances                                                 |
+| `add_expense`           | trip | Record an expense against the trip budget                                            |
+| `get_packing_list`      | trip | View the packing list                                                                |
+| `add_packing_item`      | trip | Add an item to the packing list                                                      |
+| `update_packing_item`   | trip | Mark items packed/unpacked, rename, change quantity                                  |
+| `generate_packing_list` | trip | AI-generate a packing list for the trip                                              |
+| `get_trip_members`      | trip | List trip members and their roles                                                    |
+| `search_flights`        | both | Search Booking.com flights between two airports                                      |
+| `search_hotels`         | both | Search Booking.com hotels in a city                                                  |
 
 ### Dynamic skills (manifest-driven)
 
-| Tool               | What it does                                                                                  |
-| ------------------ | --------------------------------------------------------------------------------------------- |
-| `discover_skills`  | List the **canonical skills manifest** maintained by the backend                              |
-| `traverz_api`      | Invoke any skill from the manifest by id (e.g. PAL events, settlements, documents, ideas)     |
+| Tool              | What it does                                                                              |
+| ----------------- | ----------------------------------------------------------------------------------------- |
+| `discover_skills` | List the **canonical skills manifest** maintained by the backend                          |
+| `traverz_api`     | Invoke any skill from the manifest by id (e.g. PAL events, settlements, documents, ideas) |
 
 Use `discover_skills` whenever the user asks for something that doesn't match the typed tools above — the backend keeps the manifest authoritative, and new capabilities show up here without bot updates.
 

@@ -10,6 +10,7 @@ import hashlib
 import hmac
 import http
 import json
+import logging
 import mimetypes
 import re
 import secrets
@@ -21,6 +22,24 @@ from typing import TYPE_CHECKING, Any, Self
 from urllib.parse import parse_qs, unquote, urlparse
 
 from loguru import logger
+
+# Cloud Run (and similar platforms) use a bare TCP connection for their default
+# health/startup probe — they open the port, verify it accepts connections, and
+# close without sending any HTTP data.  The websockets library tries to parse an
+# HTTP/1.1 request from that empty connection and logs the resulting
+# IncompleteReadError as ERROR "did not receive a valid HTTP request".  This is
+# harmless noise: the TCP probe succeeds (port is up) and the container stays
+# healthy.  Filter it out at the standard-library logging level so it never
+# reaches the Cloud Run stderr log as an ERROR.
+class _SuppressTcpProbeErrors(logging.Filter):
+    _PROBE_MSG = "did not receive a valid HTTP request"
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return self._PROBE_MSG not in record.getMessage()
+
+
+logging.getLogger("websockets.server").addFilter(_SuppressTcpProbeErrors())
+logging.getLogger("websockets.asyncio.server").addFilter(_SuppressTcpProbeErrors())
 from pydantic import Field, field_validator, model_validator
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.datastructures import Headers
@@ -516,6 +535,12 @@ class WebSocketChannel(BaseChannel):
         """Route an inbound HTTP request to a handler or to the WS upgrade path."""
         got, query = _parse_request_path(request.path)
 
+        # 0. Health check — used by Cloud Run liveness/readiness probes so the
+        #    load balancer sends proper HTTP GETs instead of raw TCP probes,
+        #    which would cause noisy EOFError logs in the websockets library.
+        if got == "/health":
+            return _http_json_response({"status": "ok"})
+
         # 1. Token issue endpoint (legacy, optional, gated by configured secret).
         if self.config.token_issue_path:
             issue_expected = _normalize_config_path(self.config.token_issue_path)
@@ -559,7 +584,7 @@ class WebSocketChannel(BaseChannel):
                 client_id = client_id[:128]
             if not self.is_allowed(client_id):
                 return connection.respond(403, "Forbidden")
-            return self._authorize_websocket_handshake(connection, query)
+            return await self._authorize_websocket_handshake(connection, query)
 
         # 5. Static SPA serving (only if a build directory was wired in).
         if self._static_dist_path is not None:
@@ -825,7 +850,35 @@ class WebSocketChannel(BaseChannel):
             extra_headers=[("Cache-Control", cache)],
         )
 
-    def _authorize_websocket_handshake(self, connection: Any, query: dict[str, list[str]]) -> Any:
+    async def _verify_traverz_backend_token(self, token: str) -> bool:
+        """Verify a backend-issued ws_token via the Traverz backend verify endpoint.
+
+        Called as a fallback when the token is not found in the local issued-token
+        store (i.e. it was minted by the Django backend, not this process).
+        """
+        import os
+        backend_url = os.environ.get("TRAVERZ_BACKEND_URL", "").rstrip("/")
+        if not backend_url or not token:
+            return False
+        # Only forward tokens that look like backend-minted ones (URL-safe base64,
+        # no path separators). Guards against path-traversal via the token param.
+        if not all(c in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-=" for c in token):
+            return False
+        try:
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"{backend_url}/api/bot/token/{token}/verify/",
+                    timeout=aiohttp.ClientTimeout(total=5),
+                ) as resp:
+                    ok = resp.status == 200
+                    logger.info("websocket: backend token verify status={}", resp.status)
+                    return ok
+        except Exception as exc:
+            logger.debug("websocket: backend token verify failed: {}", exc)
+            return False
+
+    async def _authorize_websocket_handshake(self, connection: Any, query: dict[str, list[str]]) -> Any:
         supplied = _query_first(query, "token")
         static_token = self.config.token.strip()
 
@@ -834,10 +887,14 @@ class WebSocketChannel(BaseChannel):
                 return None
             if supplied and self._take_issued_token_if_valid(supplied):
                 return None
+            if supplied and await self._verify_traverz_backend_token(supplied):
+                return None
             return connection.respond(401, "Unauthorized")
 
         if self.config.websocket_requires_token:
             if supplied and self._take_issued_token_if_valid(supplied):
+                return None
+            if supplied and await self._verify_traverz_backend_token(supplied):
                 return None
             return connection.respond(401, "Unauthorized")
 
@@ -936,6 +993,8 @@ class WebSocketChannel(BaseChannel):
             # Register only after ready is successfully sent to avoid out-of-order sends
             self._conn_default[connection] = default_chat_id
             self._attach(connection, default_chat_id)
+            user_id_label = raw_user_id or "anon"
+            logger.info("websocket: client connected client_id={} user_id={} trip_id={}", client_id, user_id_label, raw_trip_id or "none")
 
             async for raw in connection:
                 if isinstance(raw, bytes):
@@ -953,6 +1012,8 @@ class WebSocketChannel(BaseChannel):
                 content = _parse_inbound_payload(raw)
                 if content is None:
                     continue
+                preview = content[:80].replace("\n", " ")
+                logger.info("websocket: message from client_id={} len={} preview={!r}", client_id, len(content), preview)
                 await self._handle_message(
                     sender_id=client_id,
                     chat_id=default_chat_id,
@@ -963,7 +1024,7 @@ class WebSocketChannel(BaseChannel):
                     session_key=self._trip_session_key(connection),
                 )
         except Exception as e:
-            logger.debug("websocket connection ended: {}", e)
+            logger.info("websocket: client_id={} disconnected: {}", client_id, e)
         finally:
             self._cleanup_connection(connection)
 
