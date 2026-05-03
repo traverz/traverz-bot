@@ -239,9 +239,9 @@ class CronService:
     async def start(self) -> None:
         """Start the cron service."""
         self._running = True
-        self._load_store()
+        await asyncio.to_thread(self._load_store)
         self._recompute_next_runs()
-        self._save_store()
+        await asyncio.to_thread(self._save_store)
         self._arm_timer()
         logger.info("Cron service started with {} jobs", len(self._store.jobs if self._store else []))
 

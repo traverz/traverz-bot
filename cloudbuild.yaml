@@ -55,6 +55,8 @@ steps:
       - 'TRAVERZ_BACKEND_URL=https://api.traverz.ai,TRAVERZ_GCS_BUCKET=traverz-bot-workspace'
       - '--set-secrets'
       - 'GEMINI_API_KEY=GEMINI_API_KEY:latest,WEBSOCKET_TOKEN_SECRET=WEBSOCKET_TOKEN_SECRET:latest'
+      - '--no-startup-probe'
+      - '--no-liveness-probe'
 
 images:
   - 'gcr.io/$PROJECT_ID/traverz-bot:$COMMIT_SHA'
