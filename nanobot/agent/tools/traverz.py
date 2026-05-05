@@ -1138,10 +1138,17 @@ class ExtractDocumentTool(Tool):
 
 @tool_parameters(
     tool_parameters_schema(
-        extracted_data=StringSchema(
-            "JSON-serialised extracted data from extract_document to apply to the trip"
+        document_id=StringSchema(
+            "ID of the document whose extracted data should be applied to the trip. "
+            "This is the document_id returned by extract_document. "
+            "Use this whenever you have a document_id."
         ),
-        required=["extracted_data"],
+        extracted_data=StringSchema(
+            "JSON-serialised extracted data to apply — ONLY use this when you do NOT have "
+            "a document_id (e.g. when you read booking details directly from an image or "
+            "message). Must contain an 'events' array."
+        ),
+        required=[],
     )
 )
 class ApplyExtractedDataTool(Tool):
@@ -1150,6 +1157,9 @@ class ApplyExtractedDataTool(Tool):
     After extract_document returns structured data, confirm the key details with
     the user and call this tool to create the corresponding itinerary events,
     update trip dates, or store booking references.
+
+    Prefer passing document_id (from extract_document response) over re-serialising
+    the full JSON — it avoids data loss from truncation.
     """
 
     @property
@@ -1161,6 +1171,8 @@ class ApplyExtractedDataTool(Tool):
         return (
             "Apply previously extracted document data to the trip — creates itinerary events "
             "for bookings (flights, hotels, tours) found in the document.  "
+            "Pass document_id when available (returned by extract_document).  "
+            "Pass extracted_data only when working from inline vision/text with no document_id.  "
             "ALWAYS show the extracted data to the user and confirm before calling this.  "
             "Requires owner or editor role."
         )
@@ -1168,19 +1180,43 @@ class ApplyExtractedDataTool(Tool):
     @property
     def parameters(self) -> dict[str, Any]:
         return tool_parameters_schema(
-            extracted_data=StringSchema("JSON string of extracted data from extract_document"),
-            required=["extracted_data"],
+            document_id=StringSchema(
+                "Document ID returned by extract_document (preferred)"
+            ),
+            extracted_data=StringSchema(
+                "JSON string of extracted data (fallback when no document_id)"
+            ),
+            required=[],
         )
 
     async def execute(self, **kwargs: Any) -> str:
         _require_write()
         trip_id = _require_trip_id()
+
+        document_id = kwargs.get("document_id")
+        if document_id:
+            # Preferred path: let backend fetch from DB — no JSON round-tripping.
+            result = await _post(
+                f"/api/trips/{trip_id}/apply-extracted-data/",
+                {"document_id": document_id},
+            )
+            return _fmt(result)
+
+        # Fallback: caller supplied raw extracted_data (e.g. from vision).
         import json as _json_mod
+        raw = kwargs.get("extracted_data", "{}")
         try:
-            data_payload = _json_mod.loads(kwargs["extracted_data"])
+            data_payload = _json_mod.loads(raw) if isinstance(raw, str) else raw
         except (ValueError, TypeError):
-            data_payload = kwargs["extracted_data"]
-        result = await _post(f"/api/trips/{trip_id}/apply-extracted-data/", {"extracted_data": data_payload})
+            data_payload = {}
+        # Unwrap if LLM passed the full extract_document API response:
+        # {success, extracted_data: {events, notes, tags}, document_id, ...}
+        if isinstance(data_payload, dict) and "extracted_data" in data_payload:
+            data_payload = data_payload["extracted_data"]
+        result = await _post(
+            f"/api/trips/{trip_id}/apply-extracted-data/",
+            {"extracted_data": data_payload},
+        )
         return _fmt(result)
 
 

@@ -1164,6 +1164,16 @@ class WebSocketChannel(BaseChannel):
                 await self._send_event(connection, "error", detail="missing content")
                 return
 
+            # Refresh the user JWT from the per-message payload so that
+            # long-lived connections keep working after the 15-minute access
+            # token expires (the mobile app auto-refreshes its token but the
+            # WS connection-time copy would otherwise go stale).
+            fresh_jwt = envelope.get("user_jwt")
+            if isinstance(fresh_jwt, str) and 0 < len(fresh_jwt) <= 2048:
+                ctx = self._conn_trip_ctx.get(connection)
+                if ctx is not None:
+                    ctx["user_jwt"] = fresh_jwt
+
             raw_media = envelope.get("media")
             media_paths: list[str] = []
             if raw_media is not None:

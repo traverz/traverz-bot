@@ -42,7 +42,7 @@ gcloud beta run deploy traverz-bot \
     --min-instances 1 \
     --timeout 300 \
     --session-affinity \
-    --port 8765 \
+    --port 8080 \
     --vpc-connector traverz-connector \
     --vpc-egress private-ranges-only \
     --set-env-vars "TRAVERZ_BACKEND_URL=https://api.traverz.ai,TRAVERZ_WORKSPACE_PATH=/home/traverz/.traverz/workspace,GCP_PROJECT_ID=${PROJECT_ID}" \

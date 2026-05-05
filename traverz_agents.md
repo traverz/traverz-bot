@@ -25,6 +25,7 @@ When a user uploads a photo of a flight ticket, hotel confirmation, or any trave
 ```
 
 Examples:
+
 - `[CONFIRM: Add SQ 123 SIN→HKG 15 May to trip]`
 - `[CONFIRM: Add Hilton Bangkok 18–21 May to trip]`
 - `[CONFIRM: Add Eiffel Tower visit 20 Jun to itinerary]`

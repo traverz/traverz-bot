@@ -45,7 +45,7 @@ steps:
       - '--timeout'
       - '300'
       - '--port'
-      - '8765'
+      - '8080'
       # VPC connector (same as backend) for internal Redis / backend access
       - '--vpc-connector'
       - 'traverz-connector'
