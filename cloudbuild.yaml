@@ -52,9 +52,9 @@ steps:
       - '--vpc-egress'
       - 'private-ranges-only'
       - '--set-env-vars'
-      - 'TRAVERZ_BACKEND_URL=https://api.traverz.ai,TRAVERZ_GCS_BUCKET=traverz-bot-workspace'
+      - 'TRAVERZ_BACKEND_URL=https://api.traverz.ai,TRAVERZ_GCS_BUCKET=traverz-bot-workspace,GCP_PROJECT_ID=$PROJECT_ID'
       - '--set-secrets'
-      - 'GEMINI_API_KEY=GEMINI_API_KEY:latest,WEBSOCKET_TOKEN_SECRET=WEBSOCKET_TOKEN_SECRET:latest'
+      - 'GEMINI_API_KEY=GEMINI_API_KEY:latest,WEBSOCKET_TOKEN_SECRET=WEBSOCKET_TOKEN_SECRET:latest,TRAVERZ_SKILLS_RELOAD_SECRET=TRAVERZ_SKILLS_RELOAD_SECRET:latest'
       - '--no-startup-probe'
       - '--no-liveness-probe'
 

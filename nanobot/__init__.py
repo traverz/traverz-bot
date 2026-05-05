@@ -30,6 +30,12 @@ __version__ = _resolve_version()
 __logo__ = "✈️"
 __app_name__ = "Traverz"
 
-from nanobot.nanobot import Nanobot, RunResult
+
+def __getattr__(name: str):
+    if name in ("Nanobot", "RunResult"):
+        from nanobot.nanobot import Nanobot, RunResult  # noqa: PLC0415
+        return {"Nanobot": Nanobot, "RunResult": RunResult}[name]
+    raise AttributeError(f"module 'nanobot' has no attribute {name!r}")
+
 
 __all__ = ["Nanobot", "RunResult"]

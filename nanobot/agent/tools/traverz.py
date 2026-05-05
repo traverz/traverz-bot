@@ -135,6 +135,15 @@ class GetTripTool(Tool):
     async def execute(self, **_: Any) -> str:
         trip_id = _require_trip_id()
         data = await _get(f"/api/trips/{trip_id}/")
+        # Resolve the authoritative role from the backend response so that the
+        # client-supplied user_role (which defaults to "viewer") never masks a
+        # real owner or editor.
+        if isinstance(data, dict):
+            if data.get("is_owner"):
+                _ctx.user_role.set("owner")
+            elif data.get("can_edit"):
+                _ctx.user_role.set("editor")
+            # if neither flag is set, leave the existing role (viewer by default)
         return _fmt(data)
 
 
@@ -1049,6 +1058,133 @@ class TraverzApiTool(Tool):
 
 
 # ---------------------------------------------------------------------------
+# Documents
+# ---------------------------------------------------------------------------
+
+
+@tool_parameters(tool_parameters_schema(required=[]))
+class ListDocumentsTool(Tool):
+    """List documents attached to the current trip (tickets, confirmations, visas, etc.)."""
+
+    @property
+    def name(self) -> str:
+        return "list_documents"
+
+    @property
+    def description(self) -> str:
+        return (
+            "List all documents uploaded to the current trip — hotel confirmations, "
+            "flight tickets, visa copies, etc.  Returns id, filename, type and URL."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return {"type": "object", "properties": {}, "required": []}
+
+    @property
+    def read_only(self) -> bool:
+        return True
+
+    async def execute(self, **_: Any) -> str:
+        trip_id = _require_trip_id()
+        data = await _get(f"/api/trips/{trip_id}/documents/")
+        return _fmt(data)
+
+
+@tool_parameters(
+    tool_parameters_schema(
+        document_id=StringSchema("ID of the document to extract data from"),
+        required=["document_id"],
+    )
+)
+class ExtractDocumentTool(Tool):
+    """Ask the Traverz AI to extract structured data from a trip document.
+
+    This triggers OCR + LLM extraction on a previously uploaded booking
+    confirmation, ticket or itinerary PDF/image and returns the parsed fields
+    (dates, confirmation numbers, prices, etc.).  Call list_documents first to
+    get the document id.
+    """
+
+    @property
+    def name(self) -> str:
+        return "extract_document"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Extract structured booking/reservation data from an already-uploaded trip document.  "
+            "Returns parsed fields: dates, confirmation numbers, prices, passenger names, etc.  "
+            "Use list_documents to find the document_id first."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return tool_parameters_schema(
+            document_id=StringSchema("Document ID (from list_documents)"),
+            required=["document_id"],
+        )
+
+    @property
+    def read_only(self) -> bool:
+        return True
+
+    async def execute(self, **kwargs: Any) -> str:
+        trip_id = _require_trip_id()
+        document_id = kwargs["document_id"]
+        data = await _post(f"/api/trips/{trip_id}/extract-document/", {"document_id": document_id})
+        return _fmt(data)
+
+
+@tool_parameters(
+    tool_parameters_schema(
+        extracted_data=StringSchema(
+            "JSON-serialised extracted data from extract_document to apply to the trip"
+        ),
+        required=["extracted_data"],
+    )
+)
+class ApplyExtractedDataTool(Tool):
+    """Apply extracted document data to the trip (creates events, updates details).
+
+    After extract_document returns structured data, confirm the key details with
+    the user and call this tool to create the corresponding itinerary events,
+    update trip dates, or store booking references.
+    """
+
+    @property
+    def name(self) -> str:
+        return "apply_extracted_data"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Apply previously extracted document data to the trip — creates itinerary events "
+            "for bookings (flights, hotels, tours) found in the document.  "
+            "ALWAYS show the extracted data to the user and confirm before calling this.  "
+            "Requires owner or editor role."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return tool_parameters_schema(
+            extracted_data=StringSchema("JSON string of extracted data from extract_document"),
+            required=["extracted_data"],
+        )
+
+    async def execute(self, **kwargs: Any) -> str:
+        _require_write()
+        trip_id = _require_trip_id()
+        import json as _json_mod
+        try:
+            data_payload = _json_mod.loads(kwargs["extracted_data"])
+        except (ValueError, TypeError):
+            data_payload = kwargs["extracted_data"]
+        result = await _post(f"/api/trips/{trip_id}/apply-extracted-data/", {"extracted_data": data_payload})
+        return _fmt(result)
+
+
+# ---------------------------------------------------------------------------
 # Expose all tools
 # ---------------------------------------------------------------------------
 
@@ -1069,6 +1205,9 @@ ALL_TRAVERZ_TOOLS: list[type[Tool]] = [
     SearchFlightsTool,
     SearchHotelsTool,
     ListUserTripsTool,
+    ListDocumentsTool,
+    ExtractDocumentTool,
+    ApplyExtractedDataTool,
     DiscoverSkillsTool,
     TraverzApiTool,
 ]

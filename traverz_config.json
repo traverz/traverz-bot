@@ -2,12 +2,12 @@
   "providers": {
     "gemini": {
       "apiKey": "${GEMINI_API_KEY}",
-      "apiBase": "https://generativelanguage.googleapis.com/v1beta/openai"
+      "apiBase": "https://generativelanguage.googleapis.com/v1beta/openai/"
     }
   },
   "agents": {
     "defaults": {
-      "model": "gemini/gemini-3.1-flash-lite-preview",
+      "model": "gemini-2.5-flash",
       "provider": "gemini",
       "maxTokens": 8192,
       "contextWindowTokens": 131072,
@@ -17,7 +17,7 @@
       "unifiedSession": false,
       "sessionTtlMinutes": 0,
       "disabledSkills": ["github", "tmux", "clawhub", "skill-creator"],
-      "workspace": "${TRAVERZ_WORKSPACE_PATH}"
+      "workspace": "/tmp/workspace"
     }
   },
   "tools": {
@@ -33,12 +33,17 @@
     },
     "restrictToWorkspace": true
   },
+  "gateway": {
+    "host": "0.0.0.0",
+    "port": 9090
+  },
   "channels": {
     "websocket": {
       "enabled": true,
       "host": "0.0.0.0",
-      "port": 8765,
+      "port": 8080,
       "path": "/ws",
+      "token": "${WEBSOCKET_TOKEN_SECRET}",
       "tokenIssuePath": "/ws-token",
       "tokenIssueSecret": "${WEBSOCKET_TOKEN_SECRET}",
       "websocketRequiresToken": true,

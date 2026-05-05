@@ -34,5 +34,11 @@ if [ ! -f "${CONFIG_PATH}" ] && [ -f "/app/traverz_config.json" ]; then
     cp /app/traverz_config.json "${CONFIG_PATH}"
     echo "[traverz] Installed default config from traverz_config.json"
 fi
-
+# ── Agent workspace: install AGENTS.md so the bot has Traverz instructions ───
+AGENT_WORKSPACE="/tmp/workspace"
+if [ -f "/app/traverz_agents.md" ]; then
+    mkdir -p "${AGENT_WORKSPACE}"
+    cp /app/traverz_agents.md "${AGENT_WORKSPACE}/AGENTS.md"
+    echo "[traverz] Installed AGENTS.md to agent workspace"
+fi
 exec traverz "$@"

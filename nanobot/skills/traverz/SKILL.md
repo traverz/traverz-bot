@@ -43,7 +43,7 @@ Used when the user opens the AI assistant from inside a specific trip. In this m
 - Full read/write to the trip (subject to the user's role).
 - All typed tools above are available.
 - For features beyond the typed tools — PAL events on this trip's dates, document listing, settlements, ideas, posting to the trip chat — use `discover_skills` to enumerate available skills, then `traverz_api` to invoke them.
-- Always call `get_trip` first to understand the trip context.
+- **Always call `get_trip` as the very first tool call on every new conversation turn**, before responding to the user or invoking any other tool. This is mandatory — it both loads the trip context and sets the correct permissions for the session.
 
 The user's role in the trip determines what you can do:
 
@@ -79,6 +79,9 @@ The user's role in the trip determines what you can do:
 | `get_trip_members`      | trip | List trip members and their roles                                                    |
 | `search_flights`        | both | Search Booking.com flights between two airports                                      |
 | `search_hotels`         | both | Search Booking.com hotels in a city                                                  |
+| `list_documents`        | trip | List uploaded documents (tickets, confirmations, visas, PDFs)                        |
+| `extract_document`      | trip | Extract structured booking data from an uploaded document (OCR + AI parse)           |
+| `apply_extracted_data`  | trip | Apply extracted booking data to the itinerary — creates events from confirmations    |
 
 ### Dynamic skills (manifest-driven)
 

@@ -221,12 +221,26 @@ class ObjectSchema(Schema):
 def tool_parameters_schema(
     *,
     required: list[str] | None = None,
-    description: str = "",
+    description: str | Any = "",
     **properties: Any,
 ) -> dict[str, Any]:
-    """Build root tool parameters ``{"type": "object", "properties": ...}`` for :meth:`Tool.parameters`."""
+    """Build root tool parameters ``{"type": "object", "properties": ...}`` for :meth:`Tool.parameters``.
+
+    If ``description`` is a :class:`Schema` instance rather than a plain string it is
+    treated as a schema for a property named ``"description"`` (common when the
+    underlying API has a field called ``description``), and the root schema description
+    is left empty.
+    """
+    root_description: str = ""
+    if isinstance(description, str):
+        root_description = description
+    elif description:
+        # A Schema object was passed — it describes a field named "description".
+        # Pass via the positional properties dict to avoid colliding with the
+        # ObjectSchema "description" keyword argument.
+        properties = {"description": description, **properties}
     return ObjectSchema(
+        properties,  # positional: avoids the "description" kwarg collision
         required=required,
-        description=description,
-        **properties,
+        description=root_description,
     ).to_json_schema()

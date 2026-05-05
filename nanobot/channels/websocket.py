@@ -462,11 +462,16 @@ class WebSocketChannel(BaseChannel):
     def _expected_path(self) -> str:
         return _normalize_config_path(self.config.path)
 
-    def _trip_session_key(self, connection: Any) -> str | None:
-        """Return the trip-scoped session key for this connection, or None."""
+    def _trip_session_key(self, connection: Any, chat_id: str | None = None) -> str | None:
+        """Return the trip-scoped session key for this connection, or None.
+
+        When ``chat_id`` is provided the session is scoped per-conversation so
+        that each ``new_chat`` request produces an independent history.
+        """
         ctx = self._conn_trip_ctx.get(connection)
         if ctx and ctx.get("trip_id"):
-            return f"trip:{ctx['trip_id']}"
+            base = f"trip:{ctx['trip_id']}"
+            return f"{base}:{chat_id}" if chat_id else base
         return None
 
     def _build_trip_metadata(self, connection: Any, base: dict) -> dict:
@@ -540,6 +545,36 @@ class WebSocketChannel(BaseChannel):
 
     # -- HTTP dispatch ------------------------------------------------------
 
+    async def _handle_skills_reload(self, request: Any) -> Response:
+        """Handle POST /skills-reload — force-refresh the Traverz skills manifest.
+
+        Protected by TRAVERZ_SKILLS_RELOAD_SECRET environment variable.  The
+        backend calls this endpoint after deploying a new skills version so the
+        bot's tool surface is updated immediately without waiting for the next
+        5-minute polling cycle.
+        """
+        import os as _os
+        reload_secret = _os.environ.get("TRAVERZ_SKILLS_RELOAD_SECRET", "").strip()
+        if reload_secret:
+            provided = _bearer_token(request.headers)
+            if not provided or not hmac.compare_digest(provided, reload_secret):
+                return _http_error(401, "Unauthorized")
+
+        try:
+            from nanobot.traverz import skills_manifest as _sm
+            manifest = await _sm.refresh(force=True)
+            logger.info("skills-reload: manifest refreshed to version {}", manifest.version)
+            return _http_json_response({
+                "ok": True,
+                "version": manifest.version,
+                "skill_count": len(manifest.skills_by_id),
+            })
+        except Exception as exc:
+            logger.error("skills-reload: refresh failed: {}", exc)
+            return _http_json_response({"ok": False, "error": str(exc)}, status=500)
+
+    # -- HTTP dispatch ------------------------------------------------------
+
     async def _dispatch_http(self, connection: Any, request: WsRequest) -> Any:
         """Route an inbound HTTP request to a handler or to the WS upgrade path."""
         got, query = _parse_request_path(request.path)
@@ -549,6 +584,12 @@ class WebSocketChannel(BaseChannel):
         #    which would cause noisy EOFError logs in the websockets library.
         if got == "/health":
             return _http_json_response({"status": "ok"})
+
+        # 0b. Skills reload webhook — backend calls this after deploying a new
+        #     skills manifest so the bot picks up changes immediately rather
+        #     than waiting for the next 5-minute polling cycle.
+        if got == "/skills-reload" and request.method == "POST":
+            return await self._handle_skills_reload(request)
 
         # 1. Token issue endpoint (legacy, optional, gated by configured secret).
         if self.config.token_issue_path:
@@ -1030,7 +1071,7 @@ class WebSocketChannel(BaseChannel):
                     metadata=self._build_trip_metadata(
                         connection, {"remote": getattr(connection, "remote_address", None)}
                     ),
-                    session_key=self._trip_session_key(connection),
+                    session_key=self._trip_session_key(connection, chat_id=default_chat_id),
                 )
         except Exception as e:
             logger.info("websocket: client_id={} disconnected: {}", client_id, e)
@@ -1155,7 +1196,7 @@ class WebSocketChannel(BaseChannel):
                 metadata=self._build_trip_metadata(
                     connection, {"remote": getattr(connection, "remote_address", None)}
                 ),
-                session_key=self._trip_session_key(connection),
+                session_key=self._trip_session_key(connection, chat_id=cid),
             )
             return
         await self._send_event(connection, "error", detail=f"unknown type: {t!r}")

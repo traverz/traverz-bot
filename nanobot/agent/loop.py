@@ -635,6 +635,18 @@ class AgentLoop:
         _tctx.user_role.set((msg.metadata.get("user_role") or "viewer") if msg.metadata else "viewer")
         _tctx.user_id.set(msg.metadata.get("user_id") if msg.metadata else None)
 
+        # Auto-resolve the trip role from the backend on every turn so that a
+        # stale "viewer" sent by the client never blocks write operations.
+        # GetTripTool.execute() updates _tctx.user_role as a side-effect.
+        trip_id_val = _tctx.trip_id.get()
+        if trip_id_val:
+            try:
+                get_trip_tool = self.tools.get("get_trip")
+                if get_trip_tool is not None:
+                    await get_trip_tool.execute()
+            except Exception as _e:
+                logger.debug("auto get_trip failed for trip {}: {}", trip_id_val, _e)
+
         session_key = self._effective_session_key(msg)
         if session_key != msg.session_key:
             msg = dataclasses.replace(msg, session_key_override=session_key)
