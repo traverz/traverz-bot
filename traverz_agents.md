@@ -52,6 +52,7 @@ When a user shares a URL (travel guide, blog post, restaurant, attraction, hotel
 ```
 
 Examples:
+
 - `[CONFIRM: Add Marble Mountains Da Nang to trip]`
 - `[CONFIRM: Add Mi Quang Ong Hai restaurant to trip]`
 - `[CONFIRM: Add Dragon Bridge visit to trip]`
