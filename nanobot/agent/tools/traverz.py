@@ -258,6 +258,73 @@ class GetItineraryTool(Tool):
 
 @tool_parameters(
     tool_parameters_schema(
+        name=StringSchema("Attraction name to search for"),
+        city_name=StringSchema("City name (optional — helps narrow results)", nullable=True),
+        required=["name"],
+    )
+)
+class SearchAttractionTool(Tool):
+    """Look up an attraction in the Traverz database to get its image, coordinates and Google Place ID."""
+
+    @property
+    def name(self) -> str:
+        return "search_attraction"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Search the Traverz database for an attraction by name and optional city. "
+            "Returns image_url, latitude, longitude, place_id and address so you can "
+            "enrich add_event calls with photo and map data."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return tool_parameters_schema(
+            name=StringSchema("Attraction name to search for"),
+            city_name=StringSchema("City name (optional — helps narrow results)", nullable=True),
+            required=["name"],
+        )
+
+    @property
+    def read_only(self) -> bool:
+        return True
+
+    async def execute(self, name: str, city_name: str | None = None, **_: Any) -> str:
+        params: dict[str, str] = {"search": name}
+        if city_name:
+            params["city_name"] = city_name
+        data = await _get("/api/cities/attractions/", params=params)
+        results = data if isinstance(data, list) else data.get("results", [])
+        if not results:
+            return f"No attraction found matching '{name}'" + (f" in {city_name}" if city_name else "")
+        # Return the top 3 matches with the fields needed for add_event
+        compact = []
+        for r in results[:3]:
+            place_id = r.get("place_id") or ""
+            google_map_uri = (
+                f"https://www.google.com/maps/place/?q=place_id:{place_id}"
+                if place_id
+                else f"https://www.google.com/maps/search/?api=1&query={name.replace(' ', '+')}"
+                + (f"+{city_name.replace(' ', '+')}" if city_name else "")
+            )
+            compact.append({
+                "id": r.get("id"),
+                "name": r.get("name"),
+                "city": r.get("city_name"),
+                "image_url": r.get("primary_image") or r.get("image_url") or "",
+                "latitude": r.get("latitude"),
+                "longitude": r.get("longitude"),
+                "place_id": place_id,
+                "google_map_uri": google_map_uri,
+                "address": r.get("vicinity") or r.get("address") or "",
+                "rating": r.get("rating"),
+            })
+        return _fmt(compact)
+
+
+@tool_parameters(
+    tool_parameters_schema(
         type=StringSchema(
             "Event type: destination | accommodation | activity | transport | meal | note",
             enum=["destination", "accommodation", "activity", "transport", "meal", "note"],
@@ -266,6 +333,11 @@ class GetItineraryTool(Tool):
         start_datetime=StringSchema("ISO 8601 datetime e.g. 2025-06-15T09:00:00"),
         end_datetime=StringSchema("ISO 8601 datetime (optional)", nullable=True),
         location_address=StringSchema("Address or place name (optional)", nullable=True),
+        google_map_uri=StringSchema("Google Maps URI for the place (optional)", nullable=True),
+        image_url=StringSchema("Photo/cover image URL for the event (optional)", nullable=True),
+        location_lat=NumberSchema(description="Latitude (optional)", nullable=True),
+        location_lng=NumberSchema(description="Longitude (optional)", nullable=True),
+        location_place_id=StringSchema("Google Place ID (optional)", nullable=True),
         cost=NumberSchema(description="Cost amount (optional)", nullable=True),
         currency=StringSchema("3-letter currency code e.g. SGD (optional)", nullable=True),
         notes=StringSchema("Extra notes (optional)", nullable=True),
@@ -303,6 +375,11 @@ class AddEventTool(Tool):
             start_datetime=StringSchema("ISO 8601 datetime e.g. 2025-06-15T09:00:00"),
             end_datetime=StringSchema("ISO 8601 datetime (optional)", nullable=True),
             location_address=StringSchema("Address or place name (optional)", nullable=True),
+            google_map_uri=StringSchema("Google Maps URI for the place (optional)", nullable=True),
+            image_url=StringSchema("Photo/cover image URL for the event (optional)", nullable=True),
+            location_lat=NumberSchema(description="Latitude (optional)", nullable=True),
+            location_lng=NumberSchema(description="Longitude (optional)", nullable=True),
+            location_place_id=StringSchema("Google Place ID (optional)", nullable=True),
             cost=NumberSchema(description="Cost amount (optional)", nullable=True),
             currency=StringSchema("3-letter currency code (optional)", nullable=True),
             notes=StringSchema("Extra notes (optional)", nullable=True),
@@ -1228,6 +1305,7 @@ ALL_TRAVERZ_TOOLS: list[type[Tool]] = [
     GetTripTool,
     UpdateTripTool,
     GetItineraryTool,
+    SearchAttractionTool,
     AddEventTool,
     UpdateEventTool,
     DeleteEventTool,
