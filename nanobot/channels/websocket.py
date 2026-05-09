@@ -1019,9 +1019,14 @@ class WebSocketChannel(BaseChannel):
         raw_user_jwt = _query_first(query, "user_jwt") or ""
         raw_user_role = _query_first(query, "user_role") or "viewer"
         # Sanitize trip_id: alphanumeric + hyphens/underscores only, max 64 chars
+        clean_trip_id: str | None = None
         if raw_trip_id and re.match(r'^[A-Za-z0-9_-]{1,64}$', raw_trip_id):
+            clean_trip_id = raw_trip_id
+        # Always store user context when any user field is present — generic
+        # (non-trip-scoped) sessions need the JWT for backend API calls too.
+        if clean_trip_id or raw_user_jwt or raw_user_id:
             self._conn_trip_ctx[connection] = {
-                "trip_id": raw_trip_id,
+                "trip_id": clean_trip_id,
                 "user_id": raw_user_id[:128] if raw_user_id else None,
                 "user_jwt": raw_user_jwt[:2048] if raw_user_jwt else None,
                 "user_role": raw_user_role if raw_user_role in ("owner", "editor", "viewer") else "viewer",
@@ -1141,6 +1146,9 @@ class WebSocketChannel(BaseChannel):
     ) -> None:
         """Route one typed inbound envelope (``new_chat`` / ``attach`` / ``message``)."""
         t = envelope.get("type")
+        if t == "ping":
+            await self._send_event(connection, "pong")
+            return
         if t == "new_chat":
             new_id = str(uuid.uuid4())
             self._attach(connection, new_id)
@@ -1173,6 +1181,16 @@ class WebSocketChannel(BaseChannel):
                 ctx = self._conn_trip_ctx.get(connection)
                 if ctx is not None:
                     ctx["user_jwt"] = fresh_jwt
+                else:
+                    # Generic mode: the connection was opened without a trip_id
+                    # so no context was created at handshake time.  Bootstrap
+                    # one now from the first message that carries a JWT.
+                    self._conn_trip_ctx[connection] = {
+                        "trip_id": None,
+                        "user_id": None,
+                        "user_jwt": fresh_jwt,
+                        "user_role": "viewer",
+                    }
 
             raw_media = envelope.get("media")
             media_paths: list[str] = []
