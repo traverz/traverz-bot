@@ -774,6 +774,42 @@ class AgentLoop:
         self._background_tasks.append(task)
         task.add_done_callback(self._background_tasks.remove)
 
+    async def _report_token_usage(self, usage: dict) -> None:
+        """Fire-and-forget: post token counts to the Traverz backend AIUsage record."""
+        import os as _os
+        try:
+            import httpx as _httpx
+        except ImportError:
+            return
+        try:
+            from nanobot.traverz import context as _tctx
+        except ImportError:
+            return
+        jwt = _tctx.user_jwt.get()
+        trip_id = _tctx.trip_id.get()
+        if not jwt or not usage:
+            return
+        backend_url = _os.environ.get("TRAVERZ_BACKEND_URL", "https://api.traverz.ai")
+        payload = {
+            "prompt_tokens": usage.get("prompt_tokens", 0),
+            "completion_tokens": usage.get("completion_tokens", 0),
+            "total_tokens": usage.get("total_tokens", 0),
+            "trip_id": trip_id or "",
+        }
+        try:
+            async with _httpx.AsyncClient(timeout=10) as client:
+                resp = await client.post(
+                    f"{backend_url}/api/ai/record-bot-usage/",
+                    json=payload,
+                    headers={
+                        "Authorization": f"Bearer {jwt}",
+                        "Content-Type": "application/json",
+                    },
+                )
+                resp.raise_for_status()
+        except Exception as exc:
+            logger.debug("record_token_usage failed (non-critical): {}", exc)
+
     def stop(self) -> None:
         """Stop the agent loop."""
         self._running = False
@@ -952,6 +988,11 @@ class AgentLoop:
 
         if final_content is None or not final_content.strip():
             final_content = EMPTY_FINAL_RESPONSE_MESSAGE
+
+        # Report token usage to the Traverz backend (fire-and-forget).
+        self._schedule_background(
+            self._report_token_usage(self._last_usage or {})
+        )
 
         # Skip the already-persisted user message when saving the turn
         save_skip = 1 + len(history) + (1 if user_persisted_early else 0)

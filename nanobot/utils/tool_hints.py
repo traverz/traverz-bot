@@ -19,6 +19,32 @@ _TOOL_FORMATS: dict[str, tuple[list[str], str, bool, bool]] = {
     "list_dir":   (["path"],                           "ls {}",       True,  False),
 }
 
+# Friendly user-facing labels for Traverz-specific and web tools.
+# These replace the raw technical hint when the bot is in a trip context.
+_FRIENDLY_LABELS: dict[str, str] = {
+    "web_fetch":          "Extracting information from the link…",
+    "web_search":         "Searching the web…",
+    "get_trip":           "Reading your trip…",
+    "create_event":       "Adding event to your trip…",
+    "update_event":       "Updating your trip…",
+    "delete_event":       "Removing event from your trip…",
+    "create_note":        "Saving note to your trip…",
+    "update_note":        "Updating note…",
+    "delete_note":        "Removing note…",
+    "add_packing_item":   "Adding to your packing list…",
+    "update_packing_item": "Updating packing list…",
+    "delete_packing_item": "Removing from packing list…",
+    "get_packing_items":  "Checking your packing list…",
+    "upload_document":    "Saving document to your trip…",
+    "get_documents":      "Reading your documents…",
+    "get_notes":          "Reading your notes…",
+    "get_events":         "Reading your itinerary…",
+    "join_pal_event":     "Joining PAL event…",
+    "leave_pal_event":    "Leaving PAL event…",
+    "get_pal_events":     "Finding PAL events…",
+    "traverz_api":        "Updating your trip…",
+}
+
 # Matches file paths embedded in shell commands, including quoted paths with spaces.
 _PATH_IN_CMD_RE = re.compile(
     r'"(?P<double>(?:[A-Za-z]:[/\\]|~/|/)[^"]+)"'
@@ -31,6 +57,12 @@ def format_tool_hints(tool_calls: list) -> str:
     """Format tool calls as concise hints with smart abbreviation."""
     if not tool_calls:
         return ""
+
+    # If any call has a friendly label, use the most specific one for the group.
+    for tc in tool_calls:
+        label = _FRIENDLY_LABELS.get(tc.name)
+        if label:
+            return label
 
     formatted = []
     for tc in tool_calls:
