@@ -12,7 +12,7 @@
       "maxTokens": 8192,
       "contextWindowTokens": 131072,
       "temperature": 0.3,
-      "maxToolIterations": 50,
+      "maxToolIterations": 20,
       "timezone": "Asia/Singapore",
       "unifiedSession": false,
       "sessionTtlMinutes": 0,
