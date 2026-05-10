@@ -19,6 +19,7 @@ from nanobot.agent.tools.schema import (
     ArraySchema,
     BooleanSchema,
     NumberSchema,
+    ObjectSchema,
     StringSchema,
     tool_parameters_schema,
 )
@@ -397,6 +398,77 @@ class AddEventTool(Tool):
         trip_id = _require_trip_id()
         body = {k: v for k, v in kwargs.items() if v is not None}
         data = await _post(f"/api/trips/{trip_id}/events/", body)
+        return _fmt(data)
+
+
+_EVENT_ITEM_SCHEMA = ObjectSchema(
+    type=StringSchema(
+        "Event type",
+        enum=["destination", "accommodation", "activity", "transport", "meal", "note"],
+    ),
+    title=StringSchema("Event title"),
+    start_datetime=StringSchema("ISO 8601 datetime e.g. 2025-06-15T09:00:00"),
+    end_datetime=StringSchema("ISO 8601 end datetime (optional)", nullable=True),
+    location_address=StringSchema("Address or place name (optional)", nullable=True),
+    description=StringSchema("Longer event description (optional)", nullable=True),
+    notes=StringSchema("Extra notes (optional)", nullable=True),
+    cost=NumberSchema(description="Cost amount (optional)", nullable=True),
+    currency=StringSchema("3-letter currency code e.g. SGD (optional)", nullable=True),
+    subtype=StringSchema(
+        "Transport subtype: flight | train | bus | car | ferry | other (optional)",
+        enum=["flight", "train", "bus", "car", "ferry", "other"],
+        nullable=True,
+    ),
+    required=["type", "title", "start_datetime"],
+)
+
+
+@tool_parameters(
+    tool_parameters_schema(
+        events=ArraySchema(
+            items=_EVENT_ITEM_SCHEMA,
+            description="Array of event objects to create in one request",
+            min_items=1,
+        ),
+        required=["events"],
+    )
+)
+class BulkAddEventsTool(Tool):
+    """Add multiple events to the current trip's itinerary in a single request.
+
+    Prefer this over calling add_event repeatedly whenever you have 2 or more
+    events to create at once — it is significantly faster and atomic.
+    """
+
+    @property
+    def name(self) -> str:
+        return "bulk_add_events"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Add multiple itinerary events to the current trip in one request.  "
+            "Always use this instead of calling add_event in a loop when you need "
+            "to create 2 or more events.  Requires owner or editor role."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return tool_parameters_schema(
+            events=ArraySchema(
+                items=_EVENT_ITEM_SCHEMA,
+                description="Array of event objects to create",
+                min_items=1,
+            ),
+            required=["events"],
+        )
+
+    async def execute(self, events: list[dict], **_: Any) -> str:
+        _require_write()
+        trip_id = _require_trip_id()
+        # Strip None values from each event object
+        clean_events = [{k: v for k, v in ev.items() if v is not None} for ev in events]
+        data = await _post(f"/api/trips/{trip_id}/events/bulk/", {"events": clean_events})
         return _fmt(data)
 
 
@@ -1307,6 +1379,7 @@ ALL_TRAVERZ_TOOLS: list[type[Tool]] = [
     GetItineraryTool,
     SearchAttractionTool,
     AddEventTool,
+    BulkAddEventsTool,
     UpdateEventTool,
     DeleteEventTool,
     GetBudgetTool,
