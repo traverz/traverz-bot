@@ -61,28 +61,28 @@ The user's role in the trip determines what you can do:
 
 ### Typed tools (well-known operations)
 
-| Tool                    | Mode | What it does                                                                         |
-| ----------------------- | ---- | ------------------------------------------------------------------------------------ |
-| `list_user_trips`       | both | List all trips the user is a member of                                               |
-| `get_trip`              | trip | Full trip details (title, dates, cities, members, status)                            |
-| `update_trip`           | trip | Update trip title, dates, timezone, status                                           |
-| `get_itinerary`         | trip | List all events/activities in chron order                                            |
-| `add_event`             | trip | Add a **single** itinerary event (use only when adding exactly one event)            |
+| Tool                    | Mode | What it does                                                                                  |
+| ----------------------- | ---- | --------------------------------------------------------------------------------------------- |
+| `list_user_trips`       | both | List all trips the user is a member of                                                        |
+| `get_trip`              | trip | Full trip details (title, dates, cities, members, status)                                     |
+| `update_trip`           | trip | Update trip title, dates, timezone, status                                                    |
+| `get_itinerary`         | trip | List all events/activities in chron order                                                     |
+| `add_event`             | trip | Add a **single** itinerary event (use only when adding exactly one event)                     |
 | `bulk_add_events`       | trip | Add **2 or more** itinerary events in one request — always prefer this over looping add_event |
-| `update_event`          | trip | Edit an existing event                                                               |
-| `delete_event`          | trip | Delete an event (confirm first!)                                                     |
-| `get_budget`            | trip | Budget summary + per-person balances                                                 |
-| `add_expense`           | trip | Record an expense against the trip budget                                            |
-| `get_packing_list`      | trip | View the packing list                                                                |
-| `add_packing_item`      | trip | Add an item to the packing list                                                      |
-| `update_packing_item`   | trip | Mark items packed/unpacked, rename, change quantity                                  |
-| `generate_packing_list` | trip | AI-generate a packing list for the trip                                              |
-| `get_trip_members`      | trip | List trip members and their roles                                                    |
-| `search_flights`        | both | Search Booking.com flights between two airports                                      |
-| `search_hotels`         | both | Search Booking.com hotels in a city                                                  |
-| `list_documents`        | trip | List uploaded documents (tickets, confirmations, visas, PDFs)                        |
-| `extract_document`      | trip | Extract structured booking data from an uploaded document (OCR + AI parse)           |
-| `apply_extracted_data`  | trip | Apply extracted booking data to the itinerary — creates events from confirmations    |
+| `update_event`          | trip | Edit an existing event                                                                        |
+| `delete_event`          | trip | Delete an event (confirm first!)                                                              |
+| `get_budget`            | trip | Budget summary + per-person balances                                                          |
+| `add_expense`           | trip | Record an expense against the trip budget                                                     |
+| `get_packing_list`      | trip | View the packing list                                                                         |
+| `add_packing_item`      | trip | Add an item to the packing list                                                               |
+| `update_packing_item`   | trip | Mark items packed/unpacked, rename, change quantity                                           |
+| `generate_packing_list` | trip | AI-generate a packing list for the trip                                                       |
+| `get_trip_members`      | trip | List trip members and their roles                                                             |
+| `search_flights`        | both | Search Booking.com flights between two airports                                               |
+| `search_hotels`         | both | Search Booking.com hotels in a city                                                           |
+| `list_documents`        | trip | List uploaded documents (tickets, confirmations, visas, PDFs)                                 |
+| `extract_document`      | trip | Extract structured booking data from an uploaded document (OCR + AI parse)                    |
+| `apply_extracted_data`  | trip | Apply extracted booking data to the itinerary — creates events from confirmations             |
 
 ### Dynamic skills (manifest-driven)
 
@@ -104,7 +104,7 @@ Use `discover_skills` whenever the user asks for something that doesn't match th
 1. Call `get_itinerary` to load the full existing schedule.
 2. **Duplicate check**: scan the existing events for any with the same or very similar title and type on the same date. If a duplicate is found, do not add it — tell the user it already exists.
 3. **Conflict check**: for each event you are about to add, verify no existing event occupies the same time slot (overlapping `start_datetime` / `end_datetime`). If there is a conflict, flag it and ask the user to confirm or suggest an alternative time.
-4. **Location lookup**: before adding any event, call `search_attraction` with the event name and destination city to retrieve `location_address`, `location_lat`, `location_lng`, `location_place_id`, `google_map_uri` and `image_url`. Pass all non-null values. Never add an event without a `location_address` unless it is a free-text note with no physical location.
+4. **Location lookup**: before adding any event, call `search_attraction` with the event name and destination city to retrieve `location_address`, `location_lat`, `location_lng`, `location_place_id`, `google_map_uri` and `image_url`. Pass all non-null values — especially `image_url`, `google_map_uri`, and `description` so the mobile app can display a photo and map link. Write a vivid 1–2 sentence `description` for each event using your own knowledge if the API returns none. Never add an event without a `location_address` unless it is a free-text note with no physical location.
 5. **Bulk preference**: when adding 2 or more events, call `bulk_add_events` with all events in a single request instead of calling `add_event` repeatedly. This is faster and more efficient. Only use `add_event` when adding exactly one event.
 
 ### Planning requests

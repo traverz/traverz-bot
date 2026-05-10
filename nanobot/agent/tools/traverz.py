@@ -419,6 +419,14 @@ _EVENT_ITEM_SCHEMA = ObjectSchema(
         enum=["flight", "train", "bus", "car", "ferry", "other"],
         nullable=True,
     ),
+    image_url=StringSchema(
+        "Public image URL for the place or event (optional). Use a known official photo URL.",
+        nullable=True,
+    ),
+    google_map_uri=StringSchema(
+        "Google Maps URL for the location, e.g. https://maps.google.com/?cid=... (optional)",
+        nullable=True,
+    ),
     required=["type", "title", "start_datetime"],
 )
 
