@@ -192,14 +192,21 @@ class ObjectSchema(Schema):
         properties: Mapping[str, Any] | None = None,
         *,
         required: list[str] | None = None,
-        description: str = "",
+        description: str | Any = "",
         additional_properties: bool | dict[str, Any] | None = None,
         nullable: bool = False,
         **kwargs: Any,
     ) -> None:
-        self._properties = dict(properties or {}, **kwargs)
+        root_description = ""
+        merged_properties = dict(properties or {}, **kwargs)
+        if isinstance(description, str):
+            root_description = description
+        elif description:
+            merged_properties = {"description": description, **merged_properties}
+
+        self._properties = merged_properties
         self._required = list(required or [])
-        self._root_description = description
+        self._root_description = root_description
         self._additional_properties = additional_properties
         self._nullable = nullable
 

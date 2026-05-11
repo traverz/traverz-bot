@@ -1,4 +1,5 @@
 import shlex
+import json
 import subprocess
 import sys
 from typing import Any
@@ -123,6 +124,21 @@ def test_schema_classes_equivalent_to_sample_tool_parameters() -> None:
         required=["query", "count"],
     )
     assert built == SampleTool().parameters
+
+
+def test_object_schema_allows_description_field_without_leaking_schema_object() -> None:
+    schema = ObjectSchema(
+        title=StringSchema(""),
+        description=StringSchema("Child description", nullable=True),
+        required=["title"],
+    ).to_json_schema()
+
+    assert schema["properties"]["description"] == {
+        "type": ["string", "null"],
+        "description": "Child description",
+    }
+    assert "description" not in schema
+    json.dumps(schema)
 
 
 def test_tool_parameters_returns_fresh_copy_per_access() -> None:
