@@ -24,6 +24,7 @@ from nanobot.agent.tools.schema import (
     tool_parameters_schema,
 )
 from nanobot.traverz import context as _ctx
+from nanobot.utils.exceptions import AuthExpiredError
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -31,6 +32,17 @@ from nanobot.traverz import context as _ctx
 
 _BACKEND_URL = os.environ.get("TRAVERZ_BACKEND_URL", "https://api.traverz.ai")
 _TIMEOUT = 20  # seconds
+
+# Shared async client — reuses TCP+TLS connections across tool calls.
+# Created lazily on first use so tests can patch _BACKEND_URL before it is built.
+_http_client: httpx.AsyncClient | None = None
+
+
+def _client() -> httpx.AsyncClient:
+    global _http_client
+    if _http_client is None or _http_client.is_closed:
+        _http_client = httpx.AsyncClient(timeout=_TIMEOUT)
+    return _http_client
 
 
 def _headers() -> dict[str, str]:
@@ -60,34 +72,40 @@ def _require_write() -> None:
         )
 
 
+def _check_auth(resp: httpx.Response) -> None:
+    """Raise AuthExpiredError immediately on HTTP 401 so the agent loop aborts."""
+    if resp.status_code == 401:
+        raise AuthExpiredError()
+
+
 async def _get(path: str, params: dict | None = None) -> Any:
     url = f"{_BACKEND_URL}{path}"
-    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-        resp = await client.get(url, headers=_headers(), params=params)
+    resp = await _client().get(url, headers=_headers(), params=params)
+    _check_auth(resp)
     resp.raise_for_status()
     return resp.json()
 
 
 async def _post(path: str, body: dict) -> Any:
     url = f"{_BACKEND_URL}{path}"
-    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-        resp = await client.post(url, headers=_headers(), content=json.dumps(body))
+    resp = await _client().post(url, headers=_headers(), content=json.dumps(body))
+    _check_auth(resp)
     resp.raise_for_status()
     return resp.json()
 
 
 async def _patch(path: str, body: dict) -> Any:
     url = f"{_BACKEND_URL}{path}"
-    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-        resp = await client.patch(url, headers=_headers(), content=json.dumps(body))
+    resp = await _client().patch(url, headers=_headers(), content=json.dumps(body))
+    _check_auth(resp)
     resp.raise_for_status()
     return resp.json()
 
 
 async def _delete(path: str) -> str:
     url = f"{_BACKEND_URL}{path}"
-    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-        resp = await client.delete(url, headers=_headers())
+    resp = await _client().delete(url, headers=_headers())
+    _check_auth(resp)
     resp.raise_for_status()
     return "Deleted."
 
@@ -1205,6 +1223,8 @@ class TraverzApiTool(Tool):
             else:
                 return f"Unsupported HTTP method '{method}' on skill '{skill_id}'."
         except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthExpiredError()
             try:
                 err_body = e.response.json()
             except Exception:

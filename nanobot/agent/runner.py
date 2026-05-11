@@ -14,6 +14,7 @@ from nanobot.agent.hook import AgentHook, AgentHookContext
 from nanobot.utils.prompt_templates import render_template
 from nanobot.agent.tools.registry import ToolRegistry
 from nanobot.providers.base import LLMProvider, ToolCallRequest
+from nanobot.utils.exceptions import FatalToolError
 from nanobot.utils.helpers import (
     build_assistant_message,
     estimate_message_tokens,
@@ -324,8 +325,14 @@ class AgentRunner:
                     messages.append(tool_message)
                     completed_tool_results.append(tool_message)
                 if fatal_error is not None:
-                    error = f"Error: {type(fatal_error).__name__}: {fatal_error}"
-                    final_content = error
+                    if isinstance(fatal_error, FatalToolError):
+                        # Surface the exception's message directly — no ugly
+                        # "Error: FatalToolError:" prefix for user-facing output.
+                        final_content = str(fatal_error)
+                        error = final_content
+                    else:
+                        error = f"Error: {type(fatal_error).__name__}: {fatal_error}"
+                        final_content = error
                     stop_reason = "tool_error"
                     self._append_final_message(messages, final_content)
                     context.final_content = final_content
@@ -691,6 +698,15 @@ class AgentRunner:
                 result = await spec.tools.execute(tool_call.name, params)
         except asyncio.CancelledError:
             raise
+        except FatalToolError as exc:
+            event = {
+                "name": tool_call.name,
+                "status": "error",
+                "detail": str(exc)[:120],
+            }
+            # Always treat as fatal: propagate as the error so the runner loop
+            # aborts immediately without feeding the result back to the LLM.
+            return str(exc), event, exc
         except BaseException as exc:
             event = {
                 "name": tool_call.name,
