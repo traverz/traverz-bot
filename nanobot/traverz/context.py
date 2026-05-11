@@ -17,3 +17,7 @@ user_role: ContextVar[str] = ContextVar("traverz_user_role", default="viewer")
 
 #: The user's ID in traverz-backend.
 user_id: ContextVar[str | None] = ContextVar("traverz_user_id", default=None)
+
+#: Pre-loaded trip JSON string from the auto get_trip call at the start of each turn.
+#: Stored so _process_message can inject it into the runtime context without a second API call.
+trip_data_json: ContextVar[str | None] = ContextVar("traverz_trip_data_json", default=None)

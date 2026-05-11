@@ -638,12 +638,18 @@ class AgentLoop:
         # Auto-resolve the trip role from the backend on every turn so that a
         # stale "viewer" sent by the client never blocks write operations.
         # GetTripTool.execute() updates _tctx.user_role as a side-effect.
+        # The result is also stored in trip_data_json so _process_message can
+        # inject the trip summary into the runtime context without a second
+        # API call, eliminating redundant list_user_trips / get_trip calls by
+        # the LLM on every turn.
         trip_id_val = _tctx.trip_id.get()
+        _tctx.trip_data_json.set(None)
         if trip_id_val:
             try:
                 get_trip_tool = self.tools.get("get_trip")
                 if get_trip_tool is not None:
-                    await get_trip_tool.execute()
+                    _trip_result = await get_trip_tool.execute()
+                    _tctx.trip_data_json.set(_trip_result)
             except Exception as _e:
                 logger.debug("auto get_trip failed for trip {}: {}", trip_id_val, _e)
 
@@ -917,6 +923,15 @@ class AgentLoop:
 
         history = session.get_history(max_messages=0)
 
+        # Read pre-loaded trip context (set by _dispatch before this call).
+        try:
+            from nanobot.traverz import context as _tctx
+            _trip_id_ctx = _tctx.trip_id.get()
+            _trip_data_ctx = _tctx.trip_data_json.get()
+        except Exception:
+            _trip_id_ctx = None
+            _trip_data_ctx = None
+
         initial_messages = self.context.build_messages(
             history=history,
             current_message=msg.content,
@@ -924,6 +939,8 @@ class AgentLoop:
             media=msg.media if msg.media else None,
             channel=msg.channel,
             chat_id=msg.chat_id,
+            trip_id=_trip_id_ctx,
+            trip_data=_trip_data_ctx,
         )
 
         async def _bus_progress(

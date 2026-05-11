@@ -80,11 +80,41 @@ class ContextBuilder:
     def _build_runtime_context(
         channel: str | None, chat_id: str | None, timezone: str | None = None,
         session_summary: str | None = None,
+        trip_id: str | None = None,
+        trip_data: str | None = None,
     ) -> str:
         """Build untrusted runtime metadata block for injection before the user message."""
         lines = [f"Current Time: {current_time_str(timezone)}"]
         if channel and chat_id:
             lines += [f"Channel: {channel}", f"Chat ID: {chat_id}"]
+        if trip_id:
+            lines.append(f"Trip ID: {trip_id}")
+            # Extract a compact summary (title, destination, dates) from the
+            # pre-loaded trip JSON so the LLM immediately knows which trip it
+            # is working on without having to call get_trip or list_user_trips.
+            if trip_data:
+                try:
+                    import json as _json
+                    _td = _json.loads(trip_data)
+                    _summary_parts: list[str] = []
+                    if _td.get("title"):
+                        _summary_parts.append(f"Title: {_td['title']}")
+                    if _td.get("destination_cities"):
+                        _cities = ", ".join(
+                            (c.get("name") or str(c)) if isinstance(c, dict) else str(c)
+                            for c in _td["destination_cities"]
+                        )
+                        _summary_parts.append(f"Destination: {_cities}")
+                    if _td.get("start_date") or _td.get("start_datetime"):
+                        _summary_parts.append(f"Start: {_td.get('start_date') or _td.get('start_datetime')}")
+                    if _td.get("end_date") or _td.get("end_datetime"):
+                        _summary_parts.append(f"End: {_td.get('end_date') or _td.get('end_datetime')}")
+                    if _td.get("status"):
+                        _summary_parts.append(f"Status: {_td['status']}")
+                    if _summary_parts:
+                        lines.append("Pre-loaded Trip: " + " | ".join(_summary_parts))
+                except Exception:
+                    pass
         if session_summary:
             lines += ["", "[Resumed Session]", session_summary]
         return ContextBuilder._RUNTIME_CONTEXT_TAG + "\n" + "\n".join(lines) + "\n" + ContextBuilder._RUNTIME_CONTEXT_END
@@ -136,9 +166,16 @@ class ContextBuilder:
         chat_id: str | None = None,
         current_role: str = "user",
         session_summary: str | None = None,
+        trip_id: str | None = None,
+        trip_data: str | None = None,
     ) -> list[dict[str, Any]]:
         """Build the complete message list for an LLM call."""
-        runtime_ctx = self._build_runtime_context(channel, chat_id, self.timezone, session_summary=session_summary)
+        runtime_ctx = self._build_runtime_context(
+            channel, chat_id, self.timezone,
+            session_summary=session_summary,
+            trip_id=trip_id,
+            trip_data=trip_data,
+        )
         user_content = self._build_user_content(current_message, media)
 
         # Merge runtime context and user content into a single user message
