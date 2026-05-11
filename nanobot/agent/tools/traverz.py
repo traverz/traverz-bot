@@ -266,6 +266,8 @@ class GetItineraryTool(Tool):
                 "start_datetime": e.get("start_datetime"),
                 "end_datetime": e.get("end_datetime"),
                 "location_address": e.get("location_address"),
+                "location_place_id": e.get("location_place_id") or "",
+                "image_url": e.get("image_url") or "",
                 "cost": e.get("cost"),
                 "currency": e.get("currency"),
                 "notes": e.get("notes"),
@@ -344,8 +346,52 @@ class SearchAttractionTool(Tool):
 
 @tool_parameters(
     tool_parameters_schema(
+        place_id=StringSchema("Google Place ID (e.g. ChIJ…) to fetch details for"),
+        required=["place_id"],
+    )
+)
+class GetPlaceDetailsTool(Tool):
+    """Fetch rich place data (photo, address, hours) from Google Places and update the Traverz DB."""
+
+    @property
+    def name(self) -> str:
+        return "get_place_details"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Given a Google Place ID, calls the Google Places API (v1) to retrieve "
+            "photos, address, coordinates, opening hours and website for that place. "
+            "The Traverz backend updates the matching attraction record and returns "
+            "image_url plus enriched place data. "
+            "Use this when search_attraction returns a result with no image_url, or "
+            "when the user asks to enrich/update event photos on the itinerary."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return tool_parameters_schema(
+            place_id=StringSchema("Google Place ID (e.g. ChIJ…) to fetch details for"),
+            required=["place_id"],
+        )
+
+    @property
+    def read_only(self) -> bool:
+        return False  # Updates the attraction record in the DB
+
+    async def execute(self, place_id: str, **_: Any) -> str:
+        data = await _post(
+            "/api/cities/attractions/refresh-from-places/",
+            {"place_id": place_id},
+        )
+        return _fmt(data)
+
+
+@tool_parameters(
+    tool_parameters_schema(
         type=StringSchema(
             "Event type: destination | accommodation | activity | transport | meal | note",
+
             enum=["destination", "accommodation", "activity", "transport", "meal", "note"],
         ),
         title=StringSchema("Event title"),
@@ -1744,6 +1790,7 @@ ALL_TRAVERZ_TOOLS: list[type[Tool]] = [
     UpdateTripTool,
     GetItineraryTool,
     SearchAttractionTool,
+    GetPlaceDetailsTool,
     AddEventTool,
     BulkAddEventsTool,
     UpdateEventTool,
