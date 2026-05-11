@@ -1408,6 +1408,334 @@ class ApplyExtractedDataTool(Tool):
 
 
 # ---------------------------------------------------------------------------
+# Affiliate partner search tools
+# ---------------------------------------------------------------------------
+
+import urllib.parse as _urlparse
+
+
+@tool_parameters(
+    tool_parameters_schema(
+        city=StringSchema("City name to search hotels in"),
+        checkin=StringSchema("Check-in date YYYY-MM-DD"),
+        checkout=StringSchema("Check-out date YYYY-MM-DD"),
+        adults=StringSchema("Number of guests (default 2)", nullable=True),
+        rooms=StringSchema("Number of rooms (default 1)", nullable=True),
+        currency_code=StringSchema("Currency code e.g. USD, SGD (optional)", nullable=True),
+        required=["city", "checkin", "checkout"],
+    )
+)
+class SearchTripComHotelsTool(Tool):
+    """Search hotels on Trip.com and return an affiliate booking link."""
+
+    @property
+    def name(self) -> str:
+        return "search_trip_com_hotels"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Search for hotels on Trip.com for a given city and dates. "
+            "Returns an affiliate search link so the user can browse options and book directly. "
+            "Prefer this over search_hotels when the user wants hotel options."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return tool_parameters_schema(
+            city=StringSchema("City name"),
+            checkin=StringSchema("Check-in date YYYY-MM-DD"),
+            checkout=StringSchema("Check-out date YYYY-MM-DD"),
+            adults=StringSchema("Guests (optional)", nullable=True),
+            rooms=StringSchema("Rooms (optional)", nullable=True),
+            currency_code=StringSchema("Currency code e.g. USD (optional)", nullable=True),
+            required=["city", "checkin", "checkout"],
+        )
+
+    @property
+    def read_only(self) -> bool:
+        return True
+
+    async def execute(self, **kwargs: Any) -> str:
+        city = kwargs["city"]
+        checkin = kwargs["checkin"].replace("-", "")
+        checkout = kwargs["checkout"].replace("-", "")
+        adults = int(kwargs.get("adults") or 2)
+        rooms = int(kwargs.get("rooms") or 1)
+        currency = kwargs.get("currency_code") or "USD"
+        alliance_id = os.environ.get("TRIP_COM_ALLIANCE_ID", "")
+        sid = os.environ.get("TRIP_COM_SID", "")
+
+        params: dict[str, Any] = {
+            "city": city,
+            "checkIn": checkin,
+            "checkOut": checkout,
+            "adult": adults,
+            "rooms": rooms,
+            "curr": currency,
+        }
+        if alliance_id:
+            params["allianceid"] = alliance_id
+        if sid:
+            params["sid"] = sid
+
+        url = f"https://www.trip.com/hotels/list?{_urlparse.urlencode(params)}"
+        return _fmt({
+            "platform": "Trip.com",
+            "search_type": "hotels",
+            "city": city,
+            "checkin": kwargs["checkin"],
+            "checkout": kwargs["checkout"],
+            "adults": adults,
+            "rooms": rooms,
+            "booking_link": url,
+            "note": "Share this link with the user to browse and book hotels on Trip.com.",
+        })
+
+
+@tool_parameters(
+    tool_parameters_schema(
+        from_airport=StringSchema("Departure airport IATA code e.g. SIN"),
+        to_airport=StringSchema("Arrival airport IATA code e.g. HND"),
+        departure_date=StringSchema("Departure date YYYY-MM-DD"),
+        return_date=StringSchema("Return date YYYY-MM-DD (optional, omit for one-way)", nullable=True),
+        adults=StringSchema("Number of adult passengers (default 1)", nullable=True),
+        cabin_class=StringSchema(
+            "Cabin class (optional): economy | premium_economy | business | first",
+            enum=["economy", "premium_economy", "business", "first"],
+            nullable=True,
+        ),
+        currency_code=StringSchema("Currency code e.g. USD (optional)", nullable=True),
+        required=["from_airport", "to_airport", "departure_date"],
+    )
+)
+class SearchTripComFlightsTool(Tool):
+    """Search flights on Trip.com and return an affiliate booking link."""
+
+    @property
+    def name(self) -> str:
+        return "search_trip_com_flights"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Search for flights on Trip.com between two airports. "
+            "Returns an affiliate search link with real-time fares. "
+            "Prefer this over search_flights when the user wants to browse and book flights."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return tool_parameters_schema(
+            from_airport=StringSchema("Departure IATA code"),
+            to_airport=StringSchema("Arrival IATA code"),
+            departure_date=StringSchema("YYYY-MM-DD"),
+            return_date=StringSchema("Return date (optional)", nullable=True),
+            adults=StringSchema("Passenger count (optional)", nullable=True),
+            cabin_class=StringSchema(
+                "Cabin class",
+                enum=["economy", "premium_economy", "business", "first"],
+                nullable=True,
+            ),
+            currency_code=StringSchema("Currency code (optional)", nullable=True),
+            required=["from_airport", "to_airport", "departure_date"],
+        )
+
+    @property
+    def read_only(self) -> bool:
+        return True
+
+    async def execute(self, **kwargs: Any) -> str:
+        from_airport = kwargs["from_airport"].upper()
+        to_airport = kwargs["to_airport"].upper()
+        departure_date = kwargs["departure_date"].replace("-", "")
+        return_date = kwargs.get("return_date") or ""
+        adults = int(kwargs.get("adults") or 1)
+        cabin_class = kwargs.get("cabin_class") or "economy"
+        currency = kwargs.get("currency_code") or "USD"
+        alliance_id = os.environ.get("TRIP_COM_ALLIANCE_ID", "")
+        sid = os.environ.get("TRIP_COM_SID", "")
+
+        seat_type_map = {"economy": 1, "premium_economy": 4, "business": 2, "first": 3}
+        seat_type = seat_type_map.get(cabin_class, 1)
+
+        params: dict[str, Any] = {
+            "depCity": from_airport,
+            "arrCity": to_airport,
+            "depDate": departure_date,
+            "adultNum": adults,
+            "seatType": seat_type,
+            "curr": currency,
+            "tripType": 2 if return_date else 1,
+        }
+        if return_date:
+            params["retDate"] = return_date.replace("-", "")
+        if alliance_id:
+            params["allianceid"] = alliance_id
+        if sid:
+            params["sid"] = sid
+
+        url = f"https://www.trip.com/flights/search?{_urlparse.urlencode(params)}"
+        return _fmt({
+            "platform": "Trip.com",
+            "search_type": "flights",
+            "from": from_airport,
+            "to": to_airport,
+            "departure_date": kwargs["departure_date"],
+            "return_date": kwargs.get("return_date"),
+            "adults": adults,
+            "cabin_class": cabin_class,
+            "booking_link": url,
+            "note": "Share this link with the user to view and book flights on Trip.com.",
+        })
+
+
+@tool_parameters(
+    tool_parameters_schema(
+        pickup_city=StringSchema("Pickup city name"),
+        dropoff_city=StringSchema("Drop-off city (optional, defaults to pickup city)", nullable=True),
+        pickup_date=StringSchema("Pickup date YYYY-MM-DD"),
+        return_date=StringSchema("Return/drop-off date YYYY-MM-DD"),
+        currency_code=StringSchema("Currency code e.g. USD (optional)", nullable=True),
+        required=["pickup_city", "pickup_date", "return_date"],
+    )
+)
+class SearchTripComCarRentalTool(Tool):
+    """Search car rentals on Trip.com and return an affiliate booking link."""
+
+    @property
+    def name(self) -> str:
+        return "search_trip_com_car_rental"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Search for car rentals on Trip.com for a given destination and dates. "
+            "Returns an affiliate search link. Use for any car hire or rental requests."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return tool_parameters_schema(
+            pickup_city=StringSchema("Pickup city name"),
+            dropoff_city=StringSchema("Drop-off city (optional)", nullable=True),
+            pickup_date=StringSchema("Pickup date YYYY-MM-DD"),
+            return_date=StringSchema("Return date YYYY-MM-DD"),
+            currency_code=StringSchema("Currency code (optional)", nullable=True),
+            required=["pickup_city", "pickup_date", "return_date"],
+        )
+
+    @property
+    def read_only(self) -> bool:
+        return True
+
+    async def execute(self, **kwargs: Any) -> str:
+        pickup_city = kwargs["pickup_city"]
+        dropoff_city = kwargs.get("dropoff_city") or pickup_city
+        pickup_date = kwargs["pickup_date"].replace("-", "")
+        return_date = kwargs["return_date"].replace("-", "")
+        currency = kwargs.get("currency_code") or "USD"
+        alliance_id = os.environ.get("TRIP_COM_ALLIANCE_ID", "")
+        sid = os.environ.get("TRIP_COM_SID", "")
+
+        params: dict[str, Any] = {
+            "curr": currency,
+            "pickupCity": pickup_city,
+            "returnCity": dropoff_city,
+            "pickupDate": pickup_date,
+            "returnDate": return_date,
+        }
+        if alliance_id:
+            params["allianceid"] = alliance_id
+        if sid:
+            params["sid"] = sid
+
+        url = f"https://www.trip.com/car/?{_urlparse.urlencode(params)}"
+        return _fmt({
+            "platform": "Trip.com",
+            "search_type": "car_rental",
+            "pickup_city": pickup_city,
+            "dropoff_city": dropoff_city,
+            "pickup_date": kwargs["pickup_date"],
+            "return_date": kwargs["return_date"],
+            "booking_link": url,
+            "note": "Share this link with the user to browse car rental options on Trip.com.",
+        })
+
+
+@tool_parameters(
+    tool_parameters_schema(
+        destination=StringSchema("Destination city or attraction name"),
+        activity=StringSchema(
+            "Activity or experience type e.g. 'boat tour', 'food tour', 'cooking class' (optional)",
+            nullable=True,
+        ),
+        date=StringSchema("Activity date YYYY-MM-DD (optional)", nullable=True),
+        currency_code=StringSchema("Currency code e.g. USD, EUR (optional)", nullable=True),
+        required=["destination"],
+    )
+)
+class SearchGetYourGuideTool(Tool):
+    """Search experiences and tours on GetYourGuide and return an affiliate link."""
+
+    @property
+    def name(self) -> str:
+        return "search_getyourguide"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Search for experiences, tours, and activities on GetYourGuide. "
+            "Returns an affiliate link to browse options. "
+            "Use for any experience, tour, activity, attraction, or local adventure requests."
+        )
+
+    @property
+    def parameters(self) -> dict[str, Any]:
+        return tool_parameters_schema(
+            destination=StringSchema("Destination city or attraction"),
+            activity=StringSchema("Activity type (optional)", nullable=True),
+            date=StringSchema("Date YYYY-MM-DD (optional)", nullable=True),
+            currency_code=StringSchema("Currency code (optional)", nullable=True),
+            required=["destination"],
+        )
+
+    @property
+    def read_only(self) -> bool:
+        return True
+
+    async def execute(self, **kwargs: Any) -> str:
+        destination = kwargs["destination"]
+        activity = kwargs.get("activity") or ""
+        date = kwargs.get("date")
+        currency = kwargs.get("currency_code") or "USD"
+        partner_id = os.environ.get("GETYOURGUIDE_PARTNER_ID", "")
+
+        search_query = f"{destination} {activity}".strip()
+        params: dict[str, Any] = {
+            "q": search_query,
+            "currency": currency,
+            "utm_source": "traverz",
+            "utm_medium": "affiliate",
+        }
+        if date:
+            params["date_from"] = date
+        if partner_id:
+            params["partner_id"] = partner_id
+
+        url = f"https://www.getyourguide.com/s/?{_urlparse.urlencode(params)}"
+        return _fmt({
+            "platform": "GetYourGuide",
+            "search_type": "experiences",
+            "destination": destination,
+            "activity": activity or destination,
+            "date": date,
+            "booking_link": url,
+            "note": "Share this link with the user to browse and book experiences on GetYourGuide.",
+        })
+
+
+# ---------------------------------------------------------------------------
 # Expose all tools
 # ---------------------------------------------------------------------------
 
@@ -1429,6 +1757,10 @@ ALL_TRAVERZ_TOOLS: list[type[Tool]] = [
     GetTripMembersTool,
     SearchFlightsTool,
     SearchHotelsTool,
+    SearchTripComHotelsTool,
+    SearchTripComFlightsTool,
+    SearchTripComCarRentalTool,
+    SearchGetYourGuideTool,
     ListUserTripsTool,
     ListDocumentsTool,
     ExtractDocumentTool,
